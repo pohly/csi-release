@@ -6,10 +6,6 @@ maintains a set of components under the
 [kubernetes-csi](https://github.com/kubernetes-csi) GitHub
 organization.
 
-This repository contains code and documentation for building a
-kubernetes-csi release.
-
-
 Key concepts
 ============
 
@@ -17,30 +13,31 @@ Versioning
 ----------
 
 Each of these components has its own versioning and release
-notes. [Semantic versioning](https://semver.org/) is used.  Each
-component runs its own unit testing before a release, resulting in a
-tagged source code revision.
+notes. [Semantic versioning](https://semver.org/) is used.
 
 A "kubernetes-csi release" is a specific set of component releases
-that were tested together. Each kubernetes-csi release has its own
-version number which is increased according to the same rules as the
-individual components (major version bump when any of its components
-had a major change, etc.).
+that were tested together. It's called a "combined release". It's not
+required that exactly those components are used together. In
+particular, individual components might also get minor updates after a
+kubernetes-csi release without updating that combined release.
 
-The `csi-release` repo references other components via their base
-version and then picks up the latest release of each component with
-that base version. The `csi-release` repo will once multiple multiple
-different releases need to be supported, i.e. in contrast to
-Kubernetes itself, the release scripts and their configuration can be
-different for different release branches.
+The
+[hostpath example deployment](https://github.com/kubernetes-csi/csi-driver-host-path/tree/master/deploy)
+defines the components that are part of a combined release. This
+implies that the hostpath driver repo must be updated and tagged to
+create a new combined release. Therefore the hostpath driver's version
+becomes the kubernetes-csi release version, which is increased
+according to the same rules as the individual components (major
+version bump when any of its components had a major change, etc.).
 
 Release artifacts
 -----------------
 
-Primarily the content of each release are container images for the
-different CSI sidecar apps. Eventually auxiliary files like the RBAC
-rules that are included in each component might also get published in
-a single location.
+Tagging a component with a semantic version number triggers a release
+build for that component. The output is primarily the container image
+for the component. Eventually auxiliary files like the RBAC rules that
+are included in each component might also get published in a single
+location.
 
 Only binaries provided as part of such a release should be considered
 production ready. Binaries are never going to be rebuilt, therefore an
@@ -57,35 +54,42 @@ time, `imagePullPolicy: Always` is needed.
 Release process
 ---------------
 
-* Maintainers tag individual components.
+* A change is submitted against master.
 
-* A single
-  [Prow](https://github.com/kubernetes/test-infra/blob/master/prow/README.md)
-  job checks out the source of all components and builds them.
+* A [Prow](https://github.com/kubernetes/test-infra/blob/master/prow/README.md)
+  job checks out the source of a modified component, rebuilds it and then
+  runs unit tests and E2E tests with it.
 
-* Container images are placed in a staging area specific to the current build.
-  Staging areas from previous builds that are older than a certain amount
-  of time are garbage collected to free up the space.
+* Maintainers accept changes into the master branch.
 
-* The job runs component unit tests (aka `make test` in each component
-  repo), sanity and E2E tests (from
-  [csi-test](https://github.com/kubernetes-csi/csi-test), with the
-  definition of what to test in which configurations stored in this
-  repo).
+* The same Prow job runs for master and repeats the check. If it succeeds,
+  a new "canary" image is published for the component.
 
-* After reviewing results and potentially some more manual tests,
-  someone must trigger the promotion of release artifacts from the
-  staging area to the production area and announce the release.
+* In preparation for the release of a major new update, a feature freeze is
+  declared for the "master" branch and only changes relevant for that next
+  release are accepted.
 
+* When all changes targeted for the release are in master, automatic
+  test results are okay and and potentially some more manual tests,
+  maintainers tag each component directly on the master branch.
+
+* Maintenance releases are prepared by branching a "release-X.Y" branch from
+  release "vX.Y" and backporting relevant fixes from master. The same
+  prow job as for master also handles the maintenance branches, but potentially
+  with a different configuration.
 
 Implementation
 ==============
 
-* One periodic prow job which brings up a test cluster. TODO (?): try with different clusters?
+Each component has its own release configuration (what to build and
+publish) and rules (scripts, makefile). The advantage is that those
+can be branched and tagged together with the component.
 
-* Container images published under k8s.gcr.io. TODO: namespace for kubernetes-csi?
+To simplify maintenance and ensure consistency, the common parts can
+be shared via
+[csi-release-tools](https://github.com/kubernetes-csi/csi-release-tools/).
 
-* Each staging area is identified with a UUID. Stagging images get that UUID as tag.
-
-* Other artifacts under `https://dl.k8s.io/kubernetes-csi/[staging UUID|release number]`.
-
+The prow job then just provides a common execution environment, with
+the ability to bring up test cluster(s), publish container images on
+k8s.gcr.io (TODO: namespace for kubernetes-csi?) and other files under
+`https://dl.k8s.io/kubernetes-csi/`.
